@@ -1,8 +1,18 @@
 use clap::{Arg, ArgAction, Command};
 use reqwest::blocking::Client;
 use reqwest::header;
-//use std::collections::HashMap;
+use serde::{Deserialize, Serialize};
 use std::env;
+use std::fs;
+use std::fs::File;
+use std::io::Write;
+use std::path::PathBuf;
+
+#[derive(Deserialize, Debug, Serialize)]
+struct HmdNote {
+    id: String,
+    title: String,
+}
 
 fn main() {
     let matches = Command::new("hackmdio")
@@ -52,18 +62,44 @@ fn main() {
     match matches.subcommand() {
         Some(("sync", _sync_matches)) => match env::var("HACKMD_API_KEY") {
             Ok(api_key) => {
+                let hmd_dir = check_hmd_dir().unwrap();
+                let notes_seg = PathBuf::from("notes.json");
+                let notes_path = hmd_dir.join(notes_seg);
+
                 let request = client
                     .get("https://api.hackmd.io/v1/notes")
                     .header(header::AUTHORIZATION, format!("Bearer {}", api_key));
 
-                let response = request.send().unwrap();
-                println!("Sync response: {}", response.status());
+                let response = request.send();
+                let notes: Vec<HmdNote> = response.unwrap().json().unwrap();
+                let mut file = File::create(notes_path).unwrap();
+                let out = serde_json::to_string_pretty(&notes).unwrap();
+                file.write_all(out.as_bytes()).unwrap();
             }
-            Err(e) => println!("couldn't interpret HOME: {}", e),
+            Err(e) => println!("couldn't find HACKMD_API_KEY in the environment: {}", e),
         },
         Some(("push", _push_matches)) => {
             println!("Push response.");
         }
         _ => unreachable!(), // If all subcommands are defined above, anything else is unreachable
+    }
+}
+
+fn check_hmd_dir() -> Result<PathBuf, String> {
+    match env::var("HOME") {
+        Ok(home_dir) => {
+            let home_path = PathBuf::from(home_dir);
+            let hmd_seg = PathBuf::from(".hackmdio");
+            let hmd_dir = home_path.join(hmd_seg);
+            match fs::metadata(hmd_dir.clone()) {
+                Ok(_) => {}
+                Err(_) => match fs::create_dir(hmd_dir.clone()) {
+                    Ok(_) => {}
+                    Err(e) => println!("{}", e),
+                },
+            }
+            return Ok(hmd_dir);
+        }
+        Err(_) => todo!(),
     }
 }
