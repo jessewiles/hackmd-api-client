@@ -14,6 +14,13 @@ struct HmdNote {
     title: String,
 }
 
+#[derive(Deserialize, Debug, Serialize)]
+struct HmdNoteContent {
+    id: String,
+    content: String,
+    title: String,
+}
+
 fn main() {
     let matches = Command::new("hackmdio")
         .about("HACKMD.io client")
@@ -75,6 +82,17 @@ fn main() {
                 let mut file = File::create(notes_path).unwrap();
                 let out = serde_json::to_string_pretty(&notes).unwrap();
                 file.write_all(out.as_bytes()).unwrap();
+
+                for note in notes {
+                    let note_path = hmd_dir.join(format!("{0}.md", note.id));
+                    let note_request = client
+                        .get(format!("https://api.hackmd.io/v1/notes/{0}", note.id))
+                        .header(header::AUTHORIZATION, format!("Bearer {}", api_key));
+                    let note_response = note_request.send();
+                    let note: HmdNoteContent = note_response.unwrap().json().unwrap();
+                    let mut note_file = File::create(note_path).unwrap();
+                    note_file.write_all(note.content.as_bytes()).unwrap();
+                }
             }
             Err(e) => println!("couldn't find HACKMD_API_KEY in the environment: {}", e),
         },
